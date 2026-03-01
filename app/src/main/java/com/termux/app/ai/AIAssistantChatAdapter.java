@@ -25,6 +25,13 @@ public final class AIAssistantChatAdapter extends RecyclerView.Adapter<AIAssista
     private final List<AIAssistantMessage> items = new ArrayList<>();
     private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm", Locale.US);
 
+    private static final int BG_ASSISTANT = 0xFF1E232B;
+    private static final int BG_USER = 0xFF2A2140;
+    private static final int TXT_MAIN = 0xFFE9EDF1;
+    private static final int TXT_META = 0xFFAEB6C2;
+    private static final int TXT_ATTACH = 0xFFC9D1DB;
+    private static final int TXT_ERR = 0xFFFFB4AB;
+
     public static final class VH extends RecyclerView.ViewHolder {
         final LinearLayout root;
         final LinearLayout bubble;
@@ -55,16 +62,18 @@ public final class AIAssistantChatAdapter extends RecyclerView.Adapter<AIAssista
     @Override
     public void onBindViewHolder(@NonNull VH h, int position) {
         AIAssistantMessage m = items.get(position);
-
         boolean isUser = m.role == AIAssistantMessage.Role.USER;
-
-        LinearLayout.LayoutParams rootLp = (LinearLayout.LayoutParams) h.bubble.getLayoutParams();
-        rootLp.gravity = isUser ? Gravity.END : Gravity.START;
-        h.bubble.setLayoutParams(rootLp);
 
         LinearLayout.LayoutParams bubbleLp = (LinearLayout.LayoutParams) h.bubble.getLayoutParams();
         bubbleLp.gravity = isUser ? Gravity.END : Gravity.START;
         h.bubble.setLayoutParams(bubbleLp);
+
+        h.bubble.setBackgroundColor(isUser ? BG_USER : BG_ASSISTANT);
+
+        h.meta.setTextColor(TXT_META);
+        h.text.setTextColor(TXT_MAIN);
+        h.attachments.setTextColor(TXT_ATTACH);
+        h.error.setTextColor(TXT_ERR);
 
         h.meta.setText(buildMeta(m));
         h.text.setText(safeText(m));

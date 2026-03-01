@@ -4,7 +4,18 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="10dp">
+    android:padding="14dp">
+
+    <TextView
+        android:id="@+id/ai_drawer_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Assistant"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#E9EDF1"
+        android:letterSpacing="0.02"
+        android:layout_marginBottom="10dp" />
 
     <com.google.android.material.button.MaterialButtonToggleGroup
         android:id="@+id/model_source_toggle"
@@ -15,24 +26,39 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/model_source_local"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="42dp"
             android:layout_weight="1"
-            android:text="Local" />
+            android:text="Local"
+            android:textAllCaps="false"
+            android:textColor="#E9EDF1"
+            app:strokeColor="#2C313A"
+            app:strokeWidth="1dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/model_source_hf"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="42dp"
             android:layout_weight="1"
-            android:text="HuggingFace" />
+            android:text="HF"
+            android:textAllCaps="false"
+            android:textColor="#E9EDF1"
+            app:strokeColor="#2C313A"
+            app:strokeWidth="1dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/model_source_cloud"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="42dp"
             android:layout_weight="1"
-            android:text="Gemini" />
+            android:text="Gemini"
+            android:textAllCaps="false"
+            android:textColor="#E9EDF1"
+            app:strokeColor="#2C313A"
+            app:strokeWidth="1dp" />
     </com.google.android.material.button.MaterialButtonToggleGroup>
 
     <LinearLayout
@@ -40,7 +66,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:layout_marginTop="8dp">
+        android:layout_marginTop="12dp">
 
         <LinearLayout
             android:id="@+id/local_controls"
@@ -51,8 +77,11 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_pick_local_model"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Pick model from storage" />
+                android:layout_height="44dp"
+                android:text="Pick model from storage"
+                android:textAllCaps="false"
+                android:textColor="#0B0D10"
+                app:backgroundTint="#E9EDF1" />
 
             <TextView
                 android:id="@+id/txt_local_model_path"
@@ -60,7 +89,8 @@
                 android:layout_height="wrap_content"
                 android:text="No model selected"
                 android:textSize="12sp"
-                android:layout_marginTop="4dp" />
+                android:textColor="#AEB6C2"
+                android:layout_marginTop="6dp" />
         </LinearLayout>
 
         <LinearLayout
@@ -68,38 +98,53 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:visibility="gone">
 
             <EditText
                 android:id="@+id/edt_hf_repo"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="44dp"
                 android:hint="HF repo (e.g. TheBloke/Model-GGUF)"
-                android:inputType="text" />
+                android:inputType="text"
+                android:textColor="#E9EDF1"
+                android:textColorHint="#7F8A99"
+                android:backgroundTint="#2C313A"
+                android:paddingHorizontal="12dp" />
 
             <EditText
                 android:id="@+id/edt_hf_filename"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="44dp"
                 android:hint="File (e.g. model.Q4_K_M.gguf)"
                 android:inputType="text"
-                android:layout_marginTop="6dp" />
+                android:textColor="#E9EDF1"
+                android:textColorHint="#7F8A99"
+                android:backgroundTint="#2C313A"
+                android:paddingHorizontal="12dp"
+                android:layout_marginTop="8dp" />
 
             <EditText
                 android:id="@+id/edt_hf_token"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="44dp"
                 android:hint="HF token (optional)"
                 android:inputType="textPassword"
-                android:layout_marginTop="6dp" />
+                android:textColor="#E9EDF1"
+                android:textColorHint="#7F8A99"
+                android:backgroundTint="#2C313A"
+                android:paddingHorizontal="12dp"
+                android:layout_marginTop="8dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_download_hf"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="44dp"
                 android:text="Download model"
-                android:layout_marginTop="6dp" />
+                android:textAllCaps="false"
+                android:textColor="#0B0D10"
+                app:backgroundTint="#E9EDF1"
+                android:layout_marginTop="10dp" />
 
             <TextView
                 android:id="@+id/txt_hf_status"
@@ -107,7 +152,8 @@
                 android:layout_height="wrap_content"
                 android:text=""
                 android:textSize="12sp"
-                android:layout_marginTop="4dp" />
+                android:textColor="#AEB6C2"
+                android:layout_marginTop="6dp" />
         </LinearLayout>
 
         <LinearLayout
@@ -115,30 +161,41 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:visibility="gone">
 
             <EditText
                 android:id="@+id/edt_gemini_api_key"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="44dp"
                 android:hint="Gemini API key"
-                android:inputType="textPassword" />
+                android:inputType="textPassword"
+                android:textColor="#E9EDF1"
+                android:textColorHint="#7F8A99"
+                android:backgroundTint="#2C313A"
+                android:paddingHorizontal="12dp" />
 
             <EditText
                 android:id="@+id/edt_gemini_model"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Model (e.g. gemini-2.0-flash)"
+                android:layout_height="44dp"
+                android:hint="Model (e.g. gemini-3-flash-preview)"
                 android:inputType="text"
-                android:layout_marginTop="6dp" />
+                android:textColor="#E9EDF1"
+                android:textColorHint="#7F8A99"
+                android:backgroundTint="#2C313A"
+                android:paddingHorizontal="12dp"
+                android:layout_marginTop="8dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_save_cloud"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="44dp"
                 android:text="Save"
-                android:layout_marginTop="6dp" />
+                android:textAllCaps="false"
+                android:textColor="#0B0D10"
+                app:backgroundTint="#E9EDF1"
+                android:layout_marginTop="10dp" />
 
             <TextView
                 android:id="@+id/txt_cloud_status"
@@ -146,8 +203,10 @@
                 android:layout_height="wrap_content"
                 android:text=""
                 android:textSize="12sp"
-                android:layout_marginTop="4dp" />
+                android:textColor="#AEB6C2"
+                android:layout_marginTop="6dp" />
         </LinearLayout>
+
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -156,41 +215,49 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:overScrollMode="always"
-        android:layout_marginTop="10dp" />
+        android:layout_marginTop="14dp"
+        android:paddingBottom="8dp" />
 
     <LinearLayout
         android:id="@+id/ai_input_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="8dp">
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical">
 
         <ImageButton
             android:id="@+id/btn_attach_file"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
             android:background="@null"
             android:contentDescription="Attach file"
-            android:src="@android:drawable/ic_menu_upload" />
+            android:src="@android:drawable/ic_menu_upload"
+            android:tint="#E9EDF1" />
 
         <EditText
             android:id="@+id/edt_ai_message"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="44dp"
             android:layout_weight="1"
             android:hint="Message…"
             android:inputType="textMultiLine"
             android:maxLines="4"
             android:minLines="1"
-            android:layout_marginHorizontal="8dp" />
+            android:textColor="#E9EDF1"
+            android:textColorHint="#7F8A99"
+            android:backgroundTint="#2C313A"
+            android:paddingHorizontal="12dp"
+            android:layout_marginHorizontal="10dp" />
 
         <ImageButton
             android:id="@+id/btn_send"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
             android:background="@null"
             android:contentDescription="Send"
-            android:src="@android:drawable/ic_menu_send" />
+            android:src="@android:drawable/ic_menu_send"
+            android:tint="#E9EDF1" />
     </LinearLayout>
 
 </LinearLayout>
