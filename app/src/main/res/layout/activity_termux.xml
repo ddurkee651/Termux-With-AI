@@ -97,7 +97,6 @@
                 android:layout_width="320dp"
                 android:layout_height="match_parent"
                 android:layout_gravity="end"
-                android:descendantFocusability="blocksDescendants"
                 android:orientation="vertical"
                 android:background="?attr/termuxActivityDrawerBackground">
 
