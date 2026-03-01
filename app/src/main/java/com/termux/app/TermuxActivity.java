@@ -21,34 +21,43 @@ import android.provider.OpenableColumns;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
-import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.viewpager.widget.ViewPager;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.termux.R;
+import com.termux.app.activities.HelpActivity;
+import com.termux.app.activities.SettingsActivity;
 import com.termux.app.ai.AIAssistantChatAdapter;
 import com.termux.app.ai.AIAssistantMessage;
 import com.termux.app.ai.GeminiApi;
 import com.termux.app.api.file.FileReceiverActivity;
 import com.termux.app.terminal.TermuxActivityRootView;
+import com.termux.app.terminal.TermuxSessionsListViewController;
 import com.termux.app.terminal.TermuxTerminalSessionActivityClient;
 import com.termux.app.terminal.TermuxTerminalViewClient;
-import com.termux.app.terminal.TermuxSessionsListViewController;
 import com.termux.app.terminal.io.TerminalToolbarViewPager;
 import com.termux.app.terminal.io.TermuxTerminalExtraKeys;
-import com.termux.app.activities.HelpActivity;
-import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.activities.ReportActivity;
 import com.termux.shared.activity.ActivityUtils;
 import com.termux.shared.activity.media.AppCompatActivityUtils;
@@ -69,16 +78,6 @@ import com.termux.shared.theme.NightMode;
 import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalView;
-
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.drawerlayout.widget.DrawerLayout;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
-import androidx.viewpager.widget.ViewPager;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -119,6 +118,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private int mNavBarHeight;
     private float mTerminalToolbarDefaultHeight;
 
+    private AIAssistantChatAdapter mAIAssistantChatAdapter;
+    private final ArrayList<AIAssistantMessage.Attachment> mPendingAttachments = new ArrayList<>();
+
     private static final int CONTEXT_MENU_SELECT_URL_ID = 0;
     private static final int CONTEXT_MENU_SHARE_TRANSCRIPT_ID = 1;
     private static final int CONTEXT_MENU_SHARE_SELECTED_TEXT = 10;
@@ -146,6 +148,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final String P_GEMINI_KEY = "gemini_key";
     private static final String P_GEMINI_MODEL = "gemini_model";
 
+    private static final int REQ_PICK_LOCAL_MODEL = 2001;
+    private static final int REQ_PICK_ATTACH_FILES = 2002;
+
     private static final String LLAMA_ASSET_DIR = "llama/arm64-v8a";
     private static final String[] LLAMA_ASSET_FILES = new String[]{
         "llama-cli",
@@ -168,10 +173,6 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         "libcrypto.so.3",
         "libc++_shared.so"
     };
-
-    private SharedPreferences aiPrefs() {
-        return getSharedPreferences(AI_PREFS, MODE_PRIVATE);
-    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -216,10 +217,15 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }
 
         setTermuxTerminalViewAndClients();
+
         setTerminalToolbarView(savedInstanceState);
+
         setSettingsButtonView();
+
         setNewSessionButtonView();
+
         setToggleKeyboardView();
+
         setAIAssistantDrawerView();
 
         registerForContextMenu(mTerminalView);
@@ -318,7 +324,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         try {
             unbindService(this);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
     }
 
@@ -350,7 +356,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                             launchFailsafe = intent.getExtras().getBoolean(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
                         }
                         mTermuxTerminalSessionActivityClient.addNewSession(launchFailsafe, null);
-                    } catch (WindowManager.BadTokenException e) {
+                    } catch (WindowManager.BadTokenException ignored) {
                     }
                 });
             } else {
@@ -488,490 +494,76 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         });
     }
 
-    private void ensureBundledLlamaReady() throws Exception {
-        File dir = new File(getFilesDir(), LLAMA_ASSET_DIR);
-        if (!dir.exists()) dir.mkdirs();
-
-        AssetManager am = getAssets();
-        for (String name : LLAMA_ASSET_FILES) {
-            String assetPath = LLAMA_ASSET_DIR + "/" + name;
-            File out = new File(dir, name);
-
-            boolean need = !out.exists() || out.length() == 0;
-            if (!need) continue;
-
-            InputStream in = am.open(assetPath, AssetManager.ACCESS_STREAMING);
-            FileOutputStream fos = new FileOutputStream(out);
-            byte[] buf = new byte[1024 * 1024];
-            int r;
-            while ((r = in.read(buf)) != -1) fos.write(buf, 0, r);
-            fos.flush();
-            fos.close();
-            in.close();
-
-            out.setReadable(true, true);
-            out.setWritable(true, true);
-            out.setExecutable(true, true);
-        }
-
-        File cli = new File(dir, "llama-cli");
-        if (!cli.exists()) throw new Exception("Bundled llama-cli missing");
-    }
-
-    private File modelsDir() {
-        File d = new File(getFilesDir(), "models");
-        if (!d.exists()) d.mkdirs();
-        return d;
-    }
-
-    private String resolveDisplayName(Uri uri) {
-        try {
-            Cursor c = getContentResolver().query(uri, null, null, null, null);
-            if (c != null) {
-                int idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (c.moveToFirst() && idx >= 0) {
-                    String n = c.getString(idx);
-                    c.close();
-                    return n;
-                }
-                c.close();
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode == RESULT_OK) {
+            if (requestCode == REQ_PICK_LOCAL_MODEL && data != null && data.getData() != null) {
+                Uri uri = data.getData();
+                new Thread(() -> {
+                    try {
+                        String path = copyUriToInternalModels(uri);
+                        aiPrefs().edit().putString(P_LOCAL_MODEL_PATH, path).apply();
+                        runOnUiThread(() -> {
+                            android.widget.TextView tv = findViewById(R.id.txt_local_model_path);
+                            if (tv != null) tv.setText(path);
+                            Toast.makeText(this, "Model set", Toast.LENGTH_SHORT).show();
+                        });
+                    } catch (Exception e) {
+                        runOnUiThread(() -> Toast.makeText(this, "Model import failed: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                    }
+                }).start();
+                return;
             }
-        } catch (Exception ignored) {
-        }
-        return "model.gguf";
-    }
 
-    private String copyUriToInternalModels(Uri uri) throws Exception {
-        String name = resolveDisplayName(uri);
-        if (name == null || name.trim().isEmpty()) name = "model.gguf";
-        File out = new File(modelsDir(), name);
-        InputStream in = getContentResolver().openInputStream(uri);
-        if (in == null) throw new Exception("Could not open input stream");
-        FileOutputStream fos = new FileOutputStream(out);
-        byte[] buf = new byte[1024 * 1024];
-        int r;
-        while ((r = in.read(buf)) != -1) fos.write(buf, 0, r);
-        fos.flush();
-        fos.close();
-        in.close();
-        return out.getAbsolutePath();
-    }
-
-    private void setAIAssistantDrawerView() {
-        MaterialButtonToggleGroup toggle = findViewById(R.id.model_source_toggle);
-
-        LinearLayout localControls = findViewById(R.id.local_controls);
-        LinearLayout hfControls = findViewById(R.id.hf_controls);
-        LinearLayout cloudControls = findViewById(R.id.cloud_controls);
-
-        MaterialButton pickLocal = findViewById(R.id.btn_pick_local_model);
-        TextView localPathText = findViewById(R.id.txt_local_model_path);
-
-        EditText hfRepo = findViewById(R.id.edt_hf_repo);
-        EditText hfFile = findViewById(R.id.edt_hf_filename);
-        EditText hfToken = findViewById(R.id.edt_hf_token);
-        MaterialButton hfDownload = findViewById(R.id.btn_download_hf);
-        TextView hfStatus = findViewById(R.id.txt_hf_status);
-
-        EditText gemKey = findViewById(R.id.edt_gemini_api_key);
-        EditText gemModel = findViewById(R.id.edt_gemini_model);
-        MaterialButton gemSave = findViewById(R.id.btn_save_cloud);
-        TextView gemStatus = findViewById(R.id.txt_cloud_status);
-
-        RecyclerView chat = findViewById(R.id.ai_chat_list);
-        View send = findViewById(R.id.btn_send);
-        EditText input = findViewById(R.id.edt_ai_message);
-        View attach = findViewById(R.id.btn_attach_file);
-
-        if (toggle == null) return;
-        if (localControls == null || hfControls == null || cloudControls == null) return;
-        if (pickLocal == null || localPathText == null) return;
-        if (hfRepo == null || hfFile == null || hfToken == null || hfDownload == null || hfStatus == null) return;
-        if (gemKey == null || gemModel == null || gemSave == null || gemStatus == null) return;
-        if (chat == null || send == null || input == null || attach == null) return;
-
-        LinearLayoutManager lm = new LinearLayoutManager(this);
-        lm.setStackFromEnd(true);
-        chat.setLayoutManager(lm);
-
-        AIAssistantChatAdapter adapter = new AIAssistantChatAdapter();
-        chat.setAdapter(adapter);
-
-        final long[] nextId = new long[]{1L};
-        final ArrayList<AIAssistantMessage.Attachment> pendingAttachments = new ArrayList<>();
-
-        SharedPreferences p = aiPrefs();
-
-        String savedLocalPath = p.getString(P_LOCAL_MODEL_PATH, "");
-        localPathText.setText(savedLocalPath == null || savedLocalPath.isEmpty() ? "No model selected" : savedLocalPath);
-
-        hfRepo.setText(p.getString(P_HF_REPO, ""));
-        hfFile.setText(p.getString(P_HF_FILE, ""));
-        hfToken.setText(p.getString(P_HF_TOKEN, ""));
-        gemKey.setText(p.getString(P_GEMINI_KEY, ""));
-        gemModel.setText(p.getString(P_GEMINI_MODEL, "gemini-3-flash-preview"));
-
-        int src = p.getInt(P_MODEL_SOURCE, 0);
-        if (src == 0) toggle.check(R.id.model_source_local);
-        else if (src == 1) toggle.check(R.id.model_source_hf);
-        else toggle.check(R.id.model_source_cloud);
-
-        Runnable refreshPanels = () -> {
-            int checked = toggle.getCheckedButtonId();
-            localControls.setVisibility(checked == R.id.model_source_local ? View.VISIBLE : View.GONE);
-            hfControls.setVisibility(checked == R.id.model_source_hf ? View.VISIBLE : View.GONE);
-            cloudControls.setVisibility(checked == R.id.model_source_cloud ? View.VISIBLE : View.GONE);
-
-            int v = checked == R.id.model_source_local ? 0 : (checked == R.id.model_source_hf ? 1 : 2);
-            p.edit().putInt(P_MODEL_SOURCE, v).apply();
-        };
-
-        toggle.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
-            if (!isChecked) return;
-            refreshPanels.run();
-        });
-        refreshPanels.run();
-
-        ActivityResultLauncher<Intent> pickMultiLauncher =
-            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
-                if (result == null || result.getData() == null) return;
-
-                Intent data = result.getData();
-                ContentResolver cr = getContentResolver();
-
+            if (requestCode == REQ_PICK_ATTACH_FILES && data != null) {
                 if (data.getClipData() != null) {
                     ClipData cd = data.getClipData();
                     for (int i = 0; i < cd.getItemCount(); i++) {
                         Uri uri = cd.getItemAt(i).getUri();
-                        if (uri == null) continue;
-                        try { cr.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored) {}
-                        pendingAttachments.add(readAttachmentMeta(uri));
+                        if (uri != null) mPendingAttachments.add(readAttachmentMeta(uri));
                     }
                 } else if (data.getData() != null) {
                     Uri uri = data.getData();
-                    try { cr.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored) {}
-                    pendingAttachments.add(readAttachmentMeta(uri));
+                    mPendingAttachments.add(readAttachmentMeta(uri));
                 }
-
-                if (!pendingAttachments.isEmpty()) showToast("Attached: " + pendingAttachments.size(), false);
-            });
-
-        attach.setOnClickListener(v -> {
-            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            i.addCategory(Intent.CATEGORY_OPENABLE);
-            i.setType("*/*");
-            i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-            pickMultiLauncher.launch(i);
-        });
-
-        ActivityResultLauncher<String[]> pickLocalModelLauncher =
-            registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
-                if (uri == null) return;
-                try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Exception ignored) {}
-
-                new Thread(() -> {
-                    try {
-                        String path = copyUriToInternalModels(uri);
-                        p.edit().putString(P_LOCAL_MODEL_PATH, path).apply();
-                        runOnUiThread(() -> localPathText.setText(path));
-                        runOnUiThread(() -> showToast("Model set", false));
-                    } catch (Exception e) {
-                        runOnUiThread(() -> showToast("Model import failed: " + e.getMessage(), true));
-                    }
-                }).start();
-            });
-
-        pickLocal.setOnClickListener(v -> pickLocalModelLauncher.launch(new String[]{"*/*"}));
-
-        hfDownload.setOnClickListener(v -> {
-            String repo = hfRepo.getText() == null ? "" : hfRepo.getText().toString().trim();
-            String file = hfFile.getText() == null ? "" : hfFile.getText().toString().trim();
-            String token = hfToken.getText() == null ? "" : hfToken.getText().toString().trim();
-
-            p.edit().putString(P_HF_REPO, repo).putString(P_HF_FILE, file).putString(P_HF_TOKEN, token).apply();
-
-            if (repo.isEmpty() || file.isEmpty()) {
-                hfStatus.setText("Repo and filename required");
+                if (!mPendingAttachments.isEmpty())
+                    Toast.makeText(this, "Attached: " + mPendingAttachments.size(), Toast.LENGTH_SHORT).show();
                 return;
             }
-
-            hfStatus.setText("Downloading…");
-
-            new Thread(() -> {
-                try {
-                    File out = new File(modelsDir(), file);
-                    downloadHf(repo, file, token, out);
-                    String path = out.getAbsolutePath();
-                    p.edit().putString(P_LOCAL_MODEL_PATH, path).apply();
-                    runOnUiThread(() -> {
-                        hfStatus.setText("Downloaded: " + path);
-                        localPathText.setText(path);
-                        toggle.check(R.id.model_source_local);
-                    });
-                } catch (Exception e) {
-                    runOnUiThread(() -> hfStatus.setText("Download failed: " + e.getMessage()));
-                }
-            }).start();
-        });
-
-        gemSave.setOnClickListener(v -> {
-            String key = gemKey.getText() == null ? "" : gemKey.getText().toString().trim();
-            String model = gemModel.getText() == null ? "" : gemModel.getText().toString().trim();
-            if (model.isEmpty()) model = "gemini-3-flash-preview";
-            p.edit().putString(P_GEMINI_KEY, key).putString(P_GEMINI_MODEL, model).apply();
-            gemStatus.setText("Saved");
-        });
-
-        View.OnClickListener doSend = (v) -> {
-            String text = input.getText() == null ? "" : input.getText().toString();
-            if (text.trim().isEmpty() && pendingAttachments.isEmpty()) return;
-
-            int checked = toggle.getCheckedButtonId();
-            int chosen = checked == R.id.model_source_local ? 0 : (checked == R.id.model_source_hf ? 1 : 2);
-
-            AIAssistantMessage.ModelSource srcModelSource =
-                chosen == 0 ? AIAssistantMessage.ModelSource.LOCAL :
-                    (chosen == 1 ? AIAssistantMessage.ModelSource.HUGGINGFACE : AIAssistantMessage.ModelSource.GEMINI);
-
-            String modelId = srcModelSource == AIAssistantMessage.ModelSource.GEMINI
-                ? p.getString(P_GEMINI_MODEL, "gemini-3-flash-preview")
-                : "";
-
-            long id = nextId[0]++;
-            long ts = System.currentTimeMillis();
-
-            List<AIAssistantMessage.Attachment> atts = pendingAttachments.isEmpty()
-                ? Collections.emptyList()
-                : new ArrayList<>(pendingAttachments);
-
-            AIAssistantMessage userMsg = AIAssistantMessage.user(id, ts, text, atts, srcModelSource, modelId == null ? "" : modelId);
-            adapter.addMessage(userMsg);
-            input.setText("");
-            pendingAttachments.clear();
-            chat.post(() -> chat.scrollToPosition(adapter.getItemCount() - 1));
-
-            long aid = nextId[0]++;
-            AIAssistantMessage typing = AIAssistantMessage.assistant(aid, System.currentTimeMillis(), "", AIAssistantMessage.Status.STREAMING, srcModelSource, modelId == null ? "" : modelId);
-            adapter.addMessage(typing);
-            chat.post(() -> chat.scrollToPosition(adapter.getItemCount() - 1));
-
-            final long assistantId = aid;
-            final String prompt = text;
-
-            new Thread(() -> {
-                try {
-                    if (srcModelSource == AIAssistantMessage.ModelSource.GEMINI) {
-                        String key = p.getString(P_GEMINI_KEY, "");
-                        String m = p.getString(P_GEMINI_MODEL, "gemini-3-flash-preview");
-                        if (key == null || key.trim().isEmpty()) throw new Exception("Gemini API key missing");
-
-                        StringBuilder live = new StringBuilder();
-                        GeminiApi.Result r = GeminiApi.streamGenerateContentSse(
-                            key.trim(),
-                            m == null ? "gemini-3-flash-preview" : m,
-                            prompt,
-                            null,
-                            delta -> {
-                                live.append(delta);
-                                AIAssistantMessage upd = AIAssistantMessage.assistant(
-                                    assistantId,
-                                    System.currentTimeMillis(),
-                                    live.toString(),
-                                    AIAssistantMessage.Status.STREAMING,
-                                    AIAssistantMessage.ModelSource.GEMINI,
-                                    m == null ? "gemini-3-flash-preview" : m
-                                );
-                                runOnUiThread(() -> {
-                                    adapter.updateMessage(assistantId, upd);
-                                    chat.post(() -> chat.scrollToPosition(adapter.getItemCount() - 1));
-                                });
-                            }
-                        );
-
-                        String finalText = r.text;
-                        if (r.functionCall != null) finalText = finalText + "\n\n[FunctionCall]\n" + r.functionCall.toString();
-
-                        AIAssistantMessage finalMsg = AIAssistantMessage.assistant(
-                            assistantId,
-                            System.currentTimeMillis(),
-                            finalText,
-                            AIAssistantMessage.Status.FINAL,
-                            AIAssistantMessage.ModelSource.GEMINI,
-                            m == null ? "gemini-3-flash-preview" : m
-                        );
-
-                        runOnUiThread(() -> {
-                            adapter.updateMessage(assistantId, finalMsg);
-                            chat.post(() -> chat.scrollToPosition(adapter.getItemCount() - 1));
-                        });
-
-                    } else {
-                        String path = p.getString(P_LOCAL_MODEL_PATH, "");
-                        if (path == null || path.trim().isEmpty()) throw new Exception("Local model not set");
-
-                        String out = bundledLlamaGenerate(path.trim(), prompt);
-
-                        AIAssistantMessage finalMsg = AIAssistantMessage.assistant(
-                            assistantId,
-                            System.currentTimeMillis(),
-                            out,
-                            AIAssistantMessage.Status.FINAL,
-                            srcModelSource,
-                            ""
-                        );
-
-                        runOnUiThread(() -> {
-                            adapter.updateMessage(assistantId, finalMsg);
-                            chat.post(() -> chat.scrollToPosition(adapter.getItemCount() - 1));
-                        });
-                    }
-
-                } catch (Exception e) {
-                    AIAssistantMessage err = AIAssistantMessage.error(
-                        assistantId,
-                        System.currentTimeMillis(),
-                        e.getMessage(),
-                        srcModelSource,
-                        modelId == null ? "" : modelId
-                    );
-                    runOnUiThread(() -> {
-                        adapter.updateMessage(assistantId, err);
-                        chat.post(() -> chat.scrollToPosition(adapter.getItemCount() - 1));
-                    });
-                }
-            }).start();
-        };
-
-        send.setOnClickListener(doSend);
-        input.setOnEditorActionListener((v, actionId, event) -> {
-            doSend.onClick(v);
-            return true;
-        });
-    }
-
-    private String bundledLlamaGenerate(String modelPath, String prompt) throws Exception {
-        ensureBundledLlamaReady();
-
-        File runDir = new File(getFilesDir(), LLAMA_ASSET_DIR);
-        File cli = new File(runDir, "llama-cli");
-        if (!cli.exists()) throw new Exception("llama-cli missing after extract");
-
-        ArrayList<String> cmd = new ArrayList<>();
-        cmd.add(cli.getAbsolutePath());
-        cmd.add("-m");
-        cmd.add(modelPath);
-        cmd.add("-p");
-        cmd.add(prompt);
-        cmd.add("-n");
-        cmd.add("512");
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.directory(runDir);
-        pb.redirectErrorStream(true);
-        pb.environment().put("LD_LIBRARY_PATH", runDir.getAbsolutePath());
-
-        Process pr = pb.start();
-        BufferedReader br = new BufferedReader(new InputStreamReader(pr.getInputStream()));
-        StringBuilder sb = new StringBuilder();
-        String line;
-        while ((line = br.readLine()) != null) sb.append(line).append("\n");
-        br.close();
-        int exit = pr.waitFor();
-        if (exit != 0) throw new Exception("llama-cli exit code: " + exit);
-        return sb.toString().trim();
-    }
-
-    private void downloadHf(String repo, String filename, String token, File outFile) throws Exception {
-        String url = "https://huggingface.co/" + repo + "/resolve/main/" + filename;
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-        conn.setInstanceFollowRedirects(true);
-        conn.setRequestMethod("GET");
-        conn.setConnectTimeout(30000);
-        conn.setReadTimeout(30000);
-        if (token != null && !token.trim().isEmpty()) conn.setRequestProperty("Authorization", "Bearer " + token.trim());
-
-        int code = conn.getResponseCode();
-        if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
-
-        InputStream in = new BufferedInputStream(conn.getInputStream());
-        FileOutputStream fos = new FileOutputStream(outFile);
-        byte[] buf = new byte[1024 * 1024];
-        int r;
-        while ((r = in.read(buf)) != -1) fos.write(buf, 0, r);
-        fos.flush();
-        fos.close();
-        in.close();
-        conn.disconnect();
-    }
-
-    private AIAssistantMessage.Attachment readAttachmentMeta(Uri uri) {
-        String name = "";
-        String mime = "";
-        long size = -1;
-
-        try {
-            ContentResolver cr = getContentResolver();
-            mime = cr.getType(uri);
-
-            Cursor c = cr.query(uri, null, null, null, null);
-            if (c != null) {
-                int nameIdx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                int sizeIdx = c.getColumnIndex(OpenableColumns.SIZE);
-                if (c.moveToFirst()) {
-                    if (nameIdx >= 0) name = c.getString(nameIdx);
-                    if (sizeIdx >= 0) size = c.getLong(sizeIdx);
-                }
-                c.close();
-            }
-        } catch (Exception ignored) {
         }
 
-        return new AIAssistantMessage.Attachment(uri, name, mime, size);
+        Logger.logVerbose(LOG_TAG, "onActivityResult: requestCode: " + requestCode + ", resultCode: " + resultCode + ", data: " + IntentUtils.getIntentString(data));
+        if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) requestStoragePermission(true);
     }
 
-    @SuppressLint("RtlHardcoded")
     @Override
-    public void onBackPressed() {
-        if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
-            getDrawer().closeDrawers();
-        } else {
-            finishActivityIfNotFinishing();
-        }
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        Logger.logVerbose(LOG_TAG, "onRequestPermissionsResult: requestCode: " + requestCode + ", permissions: " + Arrays.toString(permissions) + ", grantResults: " + Arrays.toString(grantResults));
+        if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) requestStoragePermission(true);
     }
 
-    public void finishActivityIfNotFinishing() {
-        if (!TermuxActivity.this.isFinishing()) finish();
-    }
+    public void requestStoragePermission(boolean isPermissionCallback) {
+        new Thread() {
+            @Override
+            public void run() {
+                int requestCode = isPermissionCallback ? -1 : PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION;
 
-    public void showToast(String text, boolean longDuration) {
-        if (text == null || text.isEmpty()) return;
-        if (mLastToast != null) mLastToast.cancel();
-        mLastToast = Toast.makeText(TermuxActivity.this, text, longDuration ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT);
-        mLastToast.setGravity(Gravity.TOP, 0, 0);
-        mLastToast.show();
-    }
+                if (PermissionUtils.checkAndRequestLegacyOrManageExternalStoragePermission(
+                    TermuxActivity.this, requestCode, !isPermissionCallback)) {
+                    if (isPermissionCallback)
+                        Logger.logInfoAndShowToast(TermuxActivity.this, LOG_TAG,
+                            getString(com.termux.shared.R.string.msg_storage_permission_granted_on_request));
 
-    private void showStylingDialog() {
-        Intent stylingIntent = new Intent();
-        stylingIntent.setClassName(TermuxConstants.TERMUX_STYLING_PACKAGE_NAME, TermuxConstants.TERMUX_STYLING_APP.TERMUX_STYLING_ACTIVITY_NAME);
-        try {
-            startActivity(stylingIntent);
-        } catch (ActivityNotFoundException | IllegalArgumentException e) {
-            new AlertDialog.Builder(this).setMessage(getString(R.string.error_styling_not_installed))
-                .setPositiveButton(R.string.action_styling_install,
-                    (dialog, which) -> ActivityUtils.startActivity(this, new Intent(Intent.ACTION_VIEW, Uri.parse(TermuxConstants.TERMUX_STYLING_FDROID_PACKAGE_URL))))
-                .setNegativeButton(android.R.string.cancel, null).show();
-        }
-    }
-
-    private void toggleKeepScreenOn() {
-        if (mTerminalView.getKeepScreenOn()) {
-            mTerminalView.setKeepScreenOn(false);
-            mPreferences.setKeepScreenOn(false);
-        } else {
-            mTerminalView.setKeepScreenOn(true);
-            mPreferences.setKeepScreenOn(true);
-        }
+                    TermuxInstaller.setupStorageSymlinks(TermuxActivity.this);
+                } else {
+                    if (isPermissionCallback)
+                        Logger.logInfoAndShowToast(TermuxActivity.this, LOG_TAG,
+                            getString(com.termux.shared.R.string.msg_storage_permission_not_granted_on_request));
+                }
+            }
+        }.start();
     }
 
     @Override
@@ -1080,40 +672,49 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }
     }
 
-    public void requestStoragePermission(boolean isPermissionCallback) {
-        new Thread() {
-            @Override
-            public void run() {
-                int requestCode = isPermissionCallback ? -1 : PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION;
-
-                if (PermissionUtils.checkAndRequestLegacyOrManageExternalStoragePermission(
-                    TermuxActivity.this, requestCode, !isPermissionCallback)) {
-                    if (isPermissionCallback)
-                        Logger.logInfoAndShowToast(TermuxActivity.this, LOG_TAG,
-                            getString(com.termux.shared.R.string.msg_storage_permission_granted_on_request));
-
-                    TermuxInstaller.setupStorageSymlinks(TermuxActivity.this);
-                } else {
-                    if (isPermissionCallback)
-                        Logger.logInfoAndShowToast(TermuxActivity.this, LOG_TAG,
-                            getString(com.termux.shared.R.string.msg_storage_permission_not_granted_on_request));
-                }
-            }
-        }.start();
+    @SuppressLint("RtlHardcoded")
+    @Override
+    public void onBackPressed() {
+        if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
+            getDrawer().closeDrawers();
+        } else {
+            finishActivityIfNotFinishing();
+        }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        Logger.logVerbose(LOG_TAG, "onActivityResult: requestCode: " + requestCode + ", resultCode: " + resultCode + ", data: " + IntentUtils.getIntentString(data));
-        if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) requestStoragePermission(true);
+    public void finishActivityIfNotFinishing() {
+        if (!TermuxActivity.this.isFinishing()) finish();
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        Logger.logVerbose(LOG_TAG, "onRequestPermissionsResult: requestCode: " + requestCode + ", permissions: " + Arrays.toString(permissions) + ", grantResults: " + Arrays.toString(grantResults));
-        if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) requestStoragePermission(true);
+    public void showToast(String text, boolean longDuration) {
+        if (text == null || text.isEmpty()) return;
+        if (mLastToast != null) mLastToast.cancel();
+        mLastToast = Toast.makeText(TermuxActivity.this, text, longDuration ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT);
+        mLastToast.setGravity(Gravity.TOP, 0, 0);
+        mLastToast.show();
+    }
+
+    private void showStylingDialog() {
+        Intent stylingIntent = new Intent();
+        stylingIntent.setClassName(TermuxConstants.TERMUX_STYLING_PACKAGE_NAME, TermuxConstants.TERMUX_STYLING_APP.TERMUX_STYLING_ACTIVITY_NAME);
+        try {
+            startActivity(stylingIntent);
+        } catch (ActivityNotFoundException | IllegalArgumentException e) {
+            new AlertDialog.Builder(this).setMessage(getString(R.string.error_styling_not_installed))
+                .setPositiveButton(R.string.action_styling_install,
+                    (dialog, which) -> ActivityUtils.startActivity(this, new Intent(Intent.ACTION_VIEW, Uri.parse(TermuxConstants.TERMUX_STYLING_FDROID_PACKAGE_URL))))
+                .setNegativeButton(android.R.string.cancel, null).show();
+        }
+    }
+
+    private void toggleKeepScreenOn() {
+        if (mTerminalView.getKeepScreenOn()) {
+            mTerminalView.setKeepScreenOn(false);
+            mPreferences.setKeepScreenOn(false);
+        } else {
+            mTerminalView.setKeepScreenOn(true);
+            mPreferences.setKeepScreenOn(true);
+        }
     }
 
     public int getNavBarHeight() {
@@ -1168,88 +769,468 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         return null;
     }
 
-    public TermuxService getTermuxService() {
-        return mTermuxService;
+    private SharedPreferences aiPrefs() {
+        return getSharedPreferences(AI_PREFS, MODE_PRIVATE);
     }
 
-    public TerminalView getTerminalView() {
-        return mTerminalView;
+    private File modelsDir() {
+        File d = new File(getFilesDir(), "models");
+        if (!d.exists()) d.mkdirs();
+        return d;
     }
 
-    public boolean isVisible() {
-        return mIsVisible;
-    }
-
-    public TermuxAppSharedProperties getProperties() {
-        return mProperties;
-    }
-
-    public TermuxAppSharedPreferences getPreferences() {
-        return mPreferences;
-    }
-
-    public TermuxTerminalViewClient getTermuxTerminalViewClient() {
-        return mTermuxTerminalViewClient;
-    }
-
-    public TermuxTerminalSessionActivityClient getTermuxTerminalSessionClient() {
-        return mTermuxTerminalSessionActivityClient;
-    }
-
-    public boolean isActivityRecreated() {
-        return mIsActivityRecreated;
-    }
-
-    public void termuxSessionListNotifyUpdated() {
-        if (mTermuxSessionListViewController != null) mTermuxSessionListViewController.notifyDataSetChanged();
-    }
-
-    private void registerTermuxActivityBroadcastReceiver() {
-        IntentFilter intentFilter = new IntentFilter();
-        intentFilter.addAction(TERMUX_ACTIVITY.ACTION_NOTIFY_APP_CRASH);
-        intentFilter.addAction(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
-        intentFilter.addAction(TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
-        registerReceiver(mTermuxActivityBroadcastReceiver, intentFilter);
-    }
-
-    private void unregisterTermuxActivityBroadcastReceiver() {
-        unregisterReceiver(mTermuxActivityBroadcastReceiver);
-    }
-
-    private void fixTermuxActivityBroadcastReceiverIntent(Intent intent) {
-        if (intent == null) return;
-
-        String extraReloadStyle = intent.getStringExtra(TERMUX_ACTIVITY.EXTRA_RELOAD_STYLE);
-        if ("storage".equals(extraReloadStyle)) {
-            intent.removeExtra(TERMUX_ACTIVITY.EXTRA_RELOAD_STYLE);
-            intent.setAction(TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
+    private String resolveDisplayName(Uri uri) {
+        try {
+            Cursor c = getContentResolver().query(uri, null, null, null, null);
+            if (c != null) {
+                int idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (c.moveToFirst() && idx >= 0) {
+                    String n = c.getString(idx);
+                    c.close();
+                    return n;
+                }
+                c.close();
+            }
+        } catch (Exception ignored) {
         }
+        return "model.gguf";
     }
 
-    class TermuxActivityBroadcastReceiver extends BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (intent == null) return;
+    private String copyUriToInternalModels(Uri uri) throws Exception {
+        String name = resolveDisplayName(uri);
+        if (name == null || name.trim().isEmpty()) name = "model.gguf";
+        File out = new File(modelsDir(), name);
+        InputStream in = getContentResolver().openInputStream(uri);
+        if (in == null) throw new Exception("Could not open input stream");
+        FileOutputStream fos = new FileOutputStream(out);
+        byte[] buf = new byte[1024 * 1024];
+        int r;
+        while ((r = in.read(buf)) != -1) fos.write(buf, 0, r);
+        fos.flush();
+        fos.close();
+        in.close();
+        return out.getAbsolutePath();
+    }
 
-            if (mIsVisible) {
-                fixTermuxActivityBroadcastReceiverIntent(intent);
+    private void ensureBundledLlamaReady() throws Exception {
+        File dir = new File(getFilesDir(), LLAMA_ASSET_DIR);
+        if (!dir.exists()) dir.mkdirs();
 
-                switch (intent.getAction()) {
-                    case TERMUX_ACTIVITY.ACTION_NOTIFY_APP_CRASH:
-                        Logger.logDebug(LOG_TAG, "Received intent to notify app crash");
-                        TermuxCrashUtils.notifyAppCrashFromCrashLogFile(context, LOG_TAG);
-                        return;
-                    case TERMUX_ACTIVITY.ACTION_RELOAD_STYLE:
-                        Logger.logDebug(LOG_TAG, "Received intent to reload styling");
-                        TermuxActivity.this.recreate();
-                        return;
-                    case TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS:
-                        Logger.logDebug(LOG_TAG, "Received intent to request storage permissions");
-                        requestStoragePermission(false);
-                        return;
-                    default:
+        AssetManager am = getAssets();
+        for (String name : LLAMA_ASSET_FILES) {
+            String assetPath = LLAMA_ASSET_DIR + "/" + name;
+            File out = new File(dir, name);
+
+            boolean need = !out.exists() || out.length() == 0;
+            if (!need) continue;
+
+            InputStream in = am.open(assetPath, AssetManager.ACCESS_STREAMING);
+            FileOutputStream fos = new FileOutputStream(out);
+            byte[] buf = new byte[1024 * 1024];
+            int r;
+            while ((r = in.read(buf)) != -1) fos.write(buf, 0, r);
+            fos.flush();
+            fos.close();
+            in.close();
+
+            out.setReadable(true, true);
+            out.setWritable(true, true);
+            out.setExecutable(true, true);
+        }
+
+        File cli = new File(dir, "llama-cli");
+        if (!cli.exists()) throw new Exception("Bundled llama-cli missing");
+    }
+
+    private void downloadHf(String repo, String filename, String token, File outFile) throws Exception {
+        String url = "https://huggingface.co/" + repo + "/resolve/main/" + filename;
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setInstanceFollowRedirects(true);
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(30000);
+        conn.setReadTimeout(30000);
+        if (token != null && !token.trim().isEmpty()) conn.setRequestProperty("Authorization", "Bearer " + token.trim());
+
+        int code = conn.getResponseCode();
+        if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
+
+        InputStream in = new BufferedInputStream(conn.getInputStream());
+        FileOutputStream fos = new FileOutputStream(outFile);
+        byte[] buf = new byte[1024 * 1024];
+        int r;
+        while ((r = in.read(buf)) != -1) fos.write(buf, 0, r);
+        fos.flush();
+        fos.close();
+        in.close();
+        conn.disconnect();
+    }
+
+    private AIAssistantMessage.Attachment readAttachmentMeta(Uri uri) {
+        String name = "";
+        String mime = "";
+        long size = -1;
+
+        try {
+            ContentResolver cr = getContentResolver();
+            mime = cr.getType(uri);
+
+            Cursor c = cr.query(uri, null, null, null, null);
+            if (c != null) {
+                int nameIdx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                int sizeIdx = c.getColumnIndex(OpenableColumns.SIZE);
+                if (c.moveToFirst()) {
+                    if (nameIdx >= 0) name = c.getString(nameIdx);
+                    if (sizeIdx >= 0) size = c.getLong(sizeIdx);
+                }
+                c.close();
+            }
+        } catch (Exception ignored) {
+        }
+
+        return new AIAssistantMessage.Attachment(uri, name, mime, size);
+    }
+
+    private void setAIAssistantDrawerView() {
+        MaterialButtonToggleGroup toggle = findViewById(R.id.model_source_toggle);
+
+        LinearLayout localControls = findViewById(R.id.local_controls);
+        LinearLayout hfControls = findViewById(R.id.hf_controls);
+        LinearLayout cloudControls = findViewById(R.id.cloud_controls);
+
+        MaterialButton pickLocal = findViewById(R.id.btn_pick_local_model);
+        android.widget.TextView localPathText = findViewById(R.id.txt_local_model_path);
+
+        EditText hfRepo = findViewById(R.id.edt_hf_repo);
+        EditText hfFile = findViewById(R.id.edt_hf_filename);
+        EditText hfToken = findViewById(R.id.edt_hf_token);
+        MaterialButton hfDownload = findViewById(R.id.btn_download_hf);
+        android.widget.TextView hfStatus = findViewById(R.id.txt_hf_status);
+
+        EditText gemKey = findViewById(R.id.edt_gemini_api_key);
+        EditText gemModel = findViewById(R.id.edt_gemini_model);
+        MaterialButton gemSave = findViewById(R.id.btn_save_cloud);
+        android.widget.TextView gemStatus = findViewById(R.id.txt_cloud_status);
+
+        RecyclerView chat = findViewById(R.id.ai_chat_list);
+        View send = findViewById(R.id.btn_send);
+        EditText input = findViewById(R.id.edt_ai_message);
+        View attach = findViewById(R.id.btn_attach_file);
+
+        if (toggle == null) return;
+        if (localControls == null || hfControls == null || cloudControls == null) return;
+        if (pickLocal == null || localPathText == null) return;
+        if (hfRepo == null || hfFile == null || hfToken == null || hfDownload == null || hfStatus == null) return;
+        if (gemKey == null || gemModel == null || gemSave == null || gemStatus == null) return;
+        if (chat == null || send == null || input == null || attach == null) return;
+
+        LinearLayoutManager lm = new LinearLayoutManager(this);
+        lm.setStackFromEnd(true);
+        chat.setLayoutManager(lm);
+
+        mAIAssistantChatAdapter = new AIAssistantChatAdapter();
+        chat.setAdapter(mAIAssistantChatAdapter);
+
+        SharedPreferences p = aiPrefs();
+
+        String savedLocalPath = p.getString(P_LOCAL_MODEL_PATH, "");
+        localPathText.setText(savedLocalPath == null || savedLocalPath.isEmpty() ? "No model selected" : savedLocalPath);
+
+        hfRepo.setText(p.getString(P_HF_REPO, ""));
+        hfFile.setText(p.getString(P_HF_FILE, ""));
+        hfToken.setText(p.getString(P_HF_TOKEN, ""));
+        gemKey.setText(p.getString(P_GEMINI_KEY, ""));
+        gemModel.setText(p.getString(P_GEMINI_MODEL, "gemini-3-flash-preview"));
+
+        int src = p.getInt(P_MODEL_SOURCE, 0);
+        if (src == 0) toggle.check(R.id.model_source_local);
+        else if (src == 1) toggle.check(R.id.model_source_hf);
+        else toggle.check(R.id.model_source_cloud);
+
+        Runnable refreshPanels = () -> {
+            int checked = toggle.getCheckedButtonId();
+            localControls.setVisibility(checked == R.id.model_source_local ? View.VISIBLE : View.GONE);
+            hfControls.setVisibility(checked == R.id.model_source_hf ? View.VISIBLE : View.GONE);
+            cloudControls.setVisibility(checked == R.id.model_source_cloud ? View.VISIBLE : View.GONE);
+
+            int v = checked == R.id.model_source_local ? 0 : (checked == R.id.model_source_hf ? 1 : 2);
+            p.edit().putInt(P_MODEL_SOURCE, v).apply();
+        };
+
+        toggle.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
+            if (!isChecked) return;
+            refreshPanels.run();
+        });
+        refreshPanels.run();
+
+        attach.setOnClickListener(v -> {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            startActivityForResult(i, REQ_PICK_ATTACH_FILES);
+        });
+
+        pickLocal.setOnClickListener(v -> {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            startActivityForResult(i, REQ_PICK_LOCAL_MODEL);
+        });
+
+        hfDownload.setOnClickListener(v -> {
+            String repo = hfRepo.getText() == null ? "" : hfRepo.getText().toString().trim();
+            String file = hfFile.getText() == null ? "" : hfFile.getText().toString().trim();
+            String token = hfToken.getText() == null ? "" : hfToken.getText().toString().trim();
+
+            p.edit().putString(P_HF_REPO, repo).putString(P_HF_FILE, file).putString(P_HF_TOKEN, token).apply();
+
+            if (repo.isEmpty() || file.isEmpty()) {
+                hfStatus.setText("Repo and filename required");
+                return;
+            }
+
+            hfStatus.setText("Downloading…");
+
+            new Thread(() -> {
+                try {
+                    File out = new File(modelsDir(), file);
+                    downloadHf(repo, file, token, out);
+                    String path = out.getAbsolutePath();
+                    p.edit().putString(P_LOCAL_MODEL_PATH, path).apply();
+                    runOnUiThread(() -> {
+                        hfStatus.setText("Downloaded: " + path);
+                        localPathText.setText(path);
+                        toggle.check(R.id.model_source_local);
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() -> hfStatus.setText("Download failed: " + e.getMessage()));
+                }
+            }).start();
+        });
+
+        gemSave.setOnClickListener(v -> {
+            String key = gemKey.getText() == null ? "" : gemKey.getText().toString().trim();
+            String model = gemModel.getText() == null ? "" : gemModel.getText().toString().trim();
+            if (model.isEmpty()) model = "gemini-3-flash-preview";
+            p.edit().putString(P_GEMINI_KEY, key).putString(P_GEMINI_MODEL, model).apply();
+            gemStatus.setText("Saved");
+        });
+
+        send.setOnClickListener(v -> {
+            String text = input.getText() == null ? "" : input.getText().toString();
+            if (text.trim().isEmpty() && mPendingAttachments.isEmpty()) return;
+
+            int checked = toggle.getCheckedButtonId();
+            int chosen = checked == R.id.model_source_local ? 0 : (checked == R.id.model_source_hf ? 1 : 2);
+
+            AIAssistantMessage.ModelSource srcModelSource =
+                chosen == 0 ? AIAssistantMessage.ModelSource.LOCAL :
+                    (chosen == 1 ? AIAssistantMessage.ModelSource.HUGGINGFACE : AIAssistantMessage.ModelSource.GEMINI);
+
+            String modelId = srcModelSource == AIAssistantMessage.ModelSource.GEMINI
+                ? p.getString(P_GEMINI_MODEL, "gemini-3-flash-preview")
+                : "";
+
+            long ts = System.currentTimeMillis();
+            long idUser = ts;
+            long idAssistant = ts + 1;
+
+            List<AIAssistantMessage.Attachment> atts = mPendingAttachments.isEmpty()
+                ? Collections.emptyList()
+                : new ArrayList<>(mPendingAttachments);
+
+            AIAssistantMessage userMsg = AIAssistantMessage.user(idUser, ts, text, atts, srcModelSource, modelId == null ? "" : modelId);
+            mAIAssistantChatAdapter.addMessage(userMsg);
+
+            input.setText("");
+            mPendingAttachments.clear();
+            chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+
+            AIAssistantMessage typing = AIAssistantMessage.assistant(idAssistant, System.currentTimeMillis(), "", AIAssistantMessage.Status.STREAMING, srcModelSource, modelId == null ? "" : modelId);
+            mAIAssistantChatAdapter.addMessage(typing);
+            chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+
+            final long assistantId = idAssistant;
+            final String prompt = text;
+
+            new Thread(() -> {
+                try {
+                    if (srcModelSource == AIAssistantMessage.ModelSource.GEMINI) {
+                        String key = p.getString(P_GEMINI_KEY, "");
+                        String m = p.getString(P_GEMINI_MODEL, "gemini-3-flash-preview");
+                        if (key == null || key.trim().isEmpty()) throw new Exception("Gemini API key missing");
+
+                        StringBuilder live = new StringBuilder();
+                        GeminiApi.Result r = GeminiApi.streamGenerateContentSse(
+                            key.trim(),
+                            m == null ? "gemini-3-flash-preview" : m,
+                            prompt,
+                            null,
+                            delta -> {
+                                live.append(delta);
+                                AIAssistantMessage upd = AIAssistantMessage.assistant(
+                                    assistantId,
+                                    System.currentTimeMillis(),
+                                    live.toString(),
+                                    AIAssistantMessage.Status.STREAMING,
+                                    AIAssistantMessage.ModelSource.GEMINI,
+                                    m == null ? "gemini-3-flash-preview" : m
+                                );
+                                runOnUiThread(() -> {
+                                    mAIAssistantChatAdapter.updateMessage(assistantId, upd);
+                                    chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                                });
+                            }
+                        );
+
+                        String finalText = r.text;
+                        if (r.functionCall != null) finalText = finalText + "\n\n[FunctionCall]\n" + r.functionCall.toString();
+
+                        AIAssistantMessage finalMsg = AIAssistantMessage.assistant(
+                            assistantId,
+                            System.currentTimeMillis(),
+                            finalText,
+                            AIAssistantMessage.Status.FINAL,
+                            AIAssistantMessage.ModelSource.GEMINI,
+                            m == null ? "gemini-3-flash-preview" : m
+                        );
+
+                        runOnUiThread(() -> {
+                            mAIAssistantChatAdapter.updateMessage(assistantId, finalMsg);
+                            chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                        });
+
+                    } else {
+                        String path = p.getString(P_LOCAL_MODEL_PATH, "");
+                        if (path == null || path.trim().isEmpty()) throw new Exception("Local model not set");
+
+                        StringBuilder live = new StringBuilder();
+                        bundledLlamaGenerateStreamingBytes(path.trim(), prompt, delta -> {
+                            live.append(delta);
+                            AIAssistantMessage upd = AIAssistantMessage.assistant(
+                                assistantId,
+                                System.currentTimeMillis(),
+                                live.toString(),
+                                AIAssistantMessage.Status.STREAMING,
+                                srcModelSource,
+                                ""
+                            );
+                            runOnUiThread(() -> {
+                                mAIAssistantChatAdapter.updateMessage(assistantId, upd);
+                                chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                            });
+                        });
+
+                        AIAssistantMessage finalMsg = AIAssistantMessage.assistant(
+                            assistantId,
+                            System.currentTimeMillis(),
+                            live.toString().trim(),
+                            AIAssistantMessage.Status.FINAL,
+                            srcModelSource,
+                            ""
+                        );
+
+                        runOnUiThread(() -> {
+                            mAIAssistantChatAdapter.updateMessage(assistantId, finalMsg);
+                            chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                        });
+                    }
+
+                } catch (Exception e) {
+                    AIAssistantMessage err = AIAssistantMessage.error(
+                        assistantId,
+                        System.currentTimeMillis(),
+                        e.getMessage(),
+                        srcModelSource,
+                        modelId == null ? "" : modelId
+                    );
+                    runOnUiThread(() -> {
+                        mAIAssistantChatAdapter.updateMessage(assistantId, err);
+                        chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                    });
+                }
+            }).start();
+        });
+    }
+
+    private void bundledLlamaGenerateStreamingBytes(String modelPath, String prompt, DeltaCallback onDelta) throws Exception {
+        ensureBundledLlamaReady();
+
+        File runDir = new File(getFilesDir(), LLAMA_ASSET_DIR);
+        File cli = new File(runDir, "llama-cli");
+        if (!cli.exists()) throw new Exception("llama-cli missing after extract");
+
+        ArrayList<String> cmd = new ArrayList<>();
+        cmd.add(cli.getAbsolutePath());
+        cmd.add("-m");
+        cmd.add(modelPath);
+        cmd.add("-p");
+        cmd.add(prompt);
+        cmd.add("-n");
+        cmd.add("512");
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.directory(runDir);
+        pb.redirectErrorStream(true);
+        pb.environment().put("LD_LIBRARY_PATH", runDir.getAbsolutePath());
+
+        Process pr = pb.start();
+        InputStream is = pr.getInputStream();
+
+        String needle = "> " + prompt;
+        StringBuilder line = new StringBuilder();
+        boolean inAnswer = false;
+        boolean done = false;
+
+        StringBuilder pending = new StringBuilder();
+        long lastFlush = 0L;
+
+        byte[] buf = new byte[4096];
+        int n;
+
+        while (!done && (n = is.read(buf)) != -1) {
+            for (int i = 0; i < n; i++) {
+                char c = (char) (buf[i] & 0xFF);
+                if (c == '\r') continue;
+
+                if (c == '\n') {
+                    String ln = line.toString();
+                    line.setLength(0);
+
+                    if (!inAnswer) {
+                        if (ln.trim().equals(needle.trim())) inAnswer = true;
+                        continue;
+                    }
+
+                    if (ln.startsWith(">")) {
+                        done = true;
+                        break;
+                    }
+                    if (ln.startsWith("[ Prompt:")) continue;
+                    if (ln.trim().equals("Exiting...")) {
+                        done = true;
+                        break;
+                    }
+
+                    pending.append(ln).append('\n');
+
+                } else {
+                    line.append(c);
                 }
             }
+
+            long now = System.currentTimeMillis();
+            if (pending.length() > 0 && (now - lastFlush) > 80) {
+                if (onDelta != null) onDelta.onDelta(pending.toString());
+                pending.setLength(0);
+                lastFlush = now;
+            }
         }
+
+        if (pending.length() > 0 && onDelta != null) onDelta.onDelta(pending.toString());
+
+        is.close();
+        int exit = pr.waitFor();
+        if (exit != 0) throw new Exception("llama-cli exit code: " + exit);
     }
 }
