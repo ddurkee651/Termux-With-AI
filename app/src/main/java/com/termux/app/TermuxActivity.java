@@ -95,6 +95,10 @@ import java.util.List;
 
 public final class TermuxActivity extends AppCompatActivity implements ServiceConnection {
 
+    interface DeltaCallback {
+        void onDelta(String s);
+    }
+
     TermuxService mTermuxService;
     TerminalView mTerminalView;
     TermuxTerminalViewClient mTermuxTerminalViewClient;
@@ -462,9 +466,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private void setSettingsButtonView() {
         ImageButton settingsButton = findViewById(R.id.settings_button);
-        settingsButton.setOnClickListener(v -> {
-            ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class));
-        });
+        settingsButton.setOnClickListener(v -> ActivityUtils.startActivity(this, new Intent(this, SettingsActivity.class)));
     }
 
     private void setNewSessionButtonView() {
@@ -860,6 +862,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         cmd.add(modelPath);
         cmd.add("-p");
         cmd.add(prompt);
+        cmd.add("-n");
+        cmd.add("512");
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(runDir);
@@ -1162,6 +1166,42 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public TerminalSession getCurrentSession() {
         if (mTerminalView != null) return mTerminalView.getCurrentSession();
         return null;
+    }
+
+    public TermuxService getTermuxService() {
+        return mTermuxService;
+    }
+
+    public TerminalView getTerminalView() {
+        return mTerminalView;
+    }
+
+    public boolean isVisible() {
+        return mIsVisible;
+    }
+
+    public TermuxAppSharedProperties getProperties() {
+        return mProperties;
+    }
+
+    public TermuxAppSharedPreferences getPreferences() {
+        return mPreferences;
+    }
+
+    public TermuxTerminalViewClient getTermuxTerminalViewClient() {
+        return mTermuxTerminalViewClient;
+    }
+
+    public TermuxTerminalSessionActivityClient getTermuxTerminalSessionClient() {
+        return mTermuxTerminalSessionActivityClient;
+    }
+
+    public boolean isActivityRecreated() {
+        return mIsActivityRecreated;
+    }
+
+    public void termuxSessionListNotifyUpdated() {
+        if (mTermuxSessionListViewController != null) mTermuxSessionListViewController.notifyDataSetChanged();
     }
 
     private void registerTermuxActivityBroadcastReceiver() {
