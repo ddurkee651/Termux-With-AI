@@ -23,9 +23,34 @@ public final class GeminiApi {
     }
 
     public static Result generateContent(String apiKey, String model, String userText, JSONArray tools) throws Exception {
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+        JSONArray contents = new JSONArray();
+        JSONObject c0 = new JSONObject();
+        c0.put("role", "user");
+        JSONArray parts = new JSONArray();
+        JSONObject p0 = new JSONObject();
+        p0.put("text", userText == null ? "" : userText);
+        parts.put(p0);
+        c0.put("parts", parts);
+        contents.put(c0);
+        return generateContentWithContents(apiKey, model, contents, tools);
+    }
 
-        JSONObject req = buildRequest(userText, tools);
+    public static Result streamGenerateContentSse(String apiKey, String model, String userText, JSONArray tools, Consumer<String> onDelta) throws Exception {
+        JSONArray contents = new JSONArray();
+        JSONObject c0 = new JSONObject();
+        c0.put("role", "user");
+        JSONArray parts = new JSONArray();
+        JSONObject p0 = new JSONObject();
+        p0.put("text", userText == null ? "" : userText);
+        parts.put(p0);
+        c0.put("parts", parts);
+        contents.put(c0);
+        return streamGenerateContentSseWithContents(apiKey, model, contents, tools, onDelta);
+    }
+
+    public static Result generateContentWithContents(String apiKey, String model, JSONArray contents, JSONArray tools) throws Exception {
+        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+        JSONObject req = buildRequestFromContents(contents, tools);
         JSONObject resp = postJson(endpoint, apiKey, req);
 
         JSONObject extracted = extractTextAndFunctionCall(resp);
@@ -34,10 +59,9 @@ public final class GeminiApi {
         return new Result(text, fc);
     }
 
-    public static Result streamGenerateContentSse(String apiKey, String model, String userText, JSONArray tools, Consumer<String> onDelta) throws Exception {
+    public static Result streamGenerateContentSseWithContents(String apiKey, String model, JSONArray contents, JSONArray tools, Consumer<String> onDelta) throws Exception {
         String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
-
-        JSONObject req = buildRequest(userText, tools);
+        JSONObject req = buildRequestFromContents(contents, tools);
 
         HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
         conn.setRequestMethod("POST");
@@ -97,26 +121,26 @@ public final class GeminiApi {
         return new Result(full.toString().trim(), lastFunctionCall);
     }
 
-    private static JSONObject buildRequest(String userText, JSONArray tools) throws Exception {
+    public static JSONObject buildRequestFromContents(JSONArray contents, JSONArray tools) throws Exception {
         JSONObject req = new JSONObject();
-
-        JSONArray contents = new JSONArray();
-        JSONObject c0 = new JSONObject();
-        c0.put("role", "user");
-
-        JSONArray parts = new JSONArray();
-        JSONObject p0 = new JSONObject();
-        p0.put("text", userText == null ? "" : userText);
-        parts.put(p0);
-
-        c0.put("parts", parts);
-        contents.put(c0);
-
-        req.put("contents", contents);
-
+        req.put("contents", contents == null ? new JSONArray() : contents);
         if (tools != null) req.put("tools", tools);
-
         return req;
+    }
+
+    public static JSONObject buildModelFunctionCallPart(JSONObject functionCall) throws Exception {
+        JSONObject part = new JSONObject();
+        part.put("functionCall", functionCall);
+        return part;
+    }
+
+    public static JSONObject buildUserFunctionResponsePart(String name, JSONObject response) throws Exception {
+        JSONObject fr = new JSONObject();
+        fr.put("name", name);
+        fr.put("response", response == null ? new JSONObject() : response);
+        JSONObject part = new JSONObject();
+        part.put("functionResponse", fr);
+        return part;
     }
 
     private static JSONObject postJson(String endpoint, String apiKey, JSONObject req) throws Exception {
