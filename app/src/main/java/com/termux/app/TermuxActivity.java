@@ -141,7 +141,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public static Intent newInstance(Context context) {
         Intent intent = new Intent(context, TermuxActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         return intent;
     }
 
@@ -156,8 +156,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     public static void updateTermuxActivityStyling(Context context, boolean recreateActivity) {
+        if (context == null) return;
+
         Intent intent = new Intent(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
-        intent.setPackage(TermuxConstants.TERMUX_PACKAGE_NAME);
+        intent.setPackage(context.getPackageName());
         intent.putExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, recreateActivity);
         context.sendBroadcast(intent);
     }
