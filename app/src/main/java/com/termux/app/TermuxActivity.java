@@ -48,6 +48,7 @@ import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.termux.R;
 import com.termux.app.activities.HelpActivity;
 import com.termux.app.activities.SettingsActivity;
+import com.termux.app.ai.AIAgentTools;
 import com.termux.app.ai.AIAssistantChatAdapter;
 import com.termux.app.ai.AIAssistantMessage;
 import com.termux.app.ai.GeminiApi;
@@ -78,6 +79,9 @@ import com.termux.shared.theme.NightMode;
 import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalView;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -901,14 +905,14 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         return;
                     case TERMUX_ACTIVITY.ACTION_RELOAD_STYLE:
                         Logger.logDebug(LOG_TAG, "Received intent to reload styling");
-
                         if (intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, false))
                             recreate();
                         else
                             reloadActivityStyling();
-
-                        reloadActivityStyling();
-
+                        return;
+                    case TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS:
+                        Logger.logDebug(LOG_TAG, "Received intent to request storage permissions");
+                        requestStoragePermission(false);
                         return;
                     default:
                 }
@@ -1206,46 +1210,128 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         String key = p.getString(P_GEMINI_KEY, "");
                         String m = p.getString(P_GEMINI_MODEL, "gemini-3-flash-preview");
                         if (key == null || key.trim().isEmpty()) throw new Exception("Gemini API key missing");
+                        if (m == null || m.trim().isEmpty()) m = "gemini-3-flash-preview";
+
+                        JSONArray tools = AIAgentTools.buildToolSchemas();
+                        JSONArray contents = new JSONArray();
+
+                        StringBuilder userText = new StringBuilder();
+                        userText.append(prompt == null ? "" : prompt);
+
+                        if (atts != null && !atts.isEmpty()) {
+                            userText.append("\n\nAttachments:");
+                            for (int i = 0; i < atts.size(); i++) {
+                                AIAssistantMessage.Attachment a = atts.get(i);
+                                userText.append("\n- ");
+                                if (a.displayName != null && !a.displayName.isEmpty()) userText.append(a.displayName);
+                                else userText.append("file");
+                                if (a.uri != null) userText.append(" (").append(a.uri.toString()).append(")");
+                            }
+                        }
+
+                        JSONObject userMsgObj = new JSONObject();
+                        userMsgObj.put("role", "user");
+                        JSONArray userParts = new JSONArray();
+                        userParts.put(new JSONObject().put("text",
+                            "You are a coding assistant. If you need to inspect files, call tools. " +
+                                "Do not claim you can access files unless you call a tool. " +
+                                "Use tools like list_dir/read_file/write_file as needed.\n\n" +
+                                userText.toString()
+                        ));
+                        userMsgObj.put("parts", userParts);
+                        contents.put(userMsgObj);
 
                         StringBuilder live = new StringBuilder();
-                        GeminiApi.Result r = GeminiApi.streamGenerateContentSse(
-                            key.trim(),
-                            m == null ? "gemini-3-flash-preview" : m,
-                            prompt,
-                            null,
-                            delta -> {
-                                live.append(delta);
-                                AIAssistantMessage upd = AIAssistantMessage.assistant(
+                        int maxToolLoops = 8;
+
+                        for (int loop = 0; loop < maxToolLoops; loop++) {
+                            live.setLength(0);
+
+                            GeminiApi.Result r = GeminiApi.streamGenerateContentSseWithContents(
+                                key.trim(),
+                                m,
+                                contents,
+                                tools,
+                                delta -> {
+                                    live.append(delta);
+                                    AIAssistantMessage upd = AIAssistantMessage.assistant(
+                                        assistantId,
+                                        System.currentTimeMillis(),
+                                        live.toString(),
+                                        AIAssistantMessage.Status.STREAMING,
+                                        AIAssistantMessage.ModelSource.GEMINI,
+                                        m
+                                    );
+                                    runOnUiThread(() -> {
+                                        mAIAssistantChatAdapter.updateMessage(assistantId, upd);
+                                        chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                                    });
+                                }
+                            );
+
+                            if (r.functionCall == null) {
+                                String finalText = (r.text == null || r.text.isEmpty()) ? live.toString() : r.text;
+                                AIAssistantMessage finalMsg = AIAssistantMessage.assistant(
                                     assistantId,
                                     System.currentTimeMillis(),
-                                    live.toString(),
-                                    AIAssistantMessage.Status.STREAMING,
+                                    finalText == null ? "" : finalText.trim(),
+                                    AIAssistantMessage.Status.FINAL,
                                     AIAssistantMessage.ModelSource.GEMINI,
-                                    m == null ? "gemini-3-flash-preview" : m
+                                    m
                                 );
                                 runOnUiThread(() -> {
-                                    mAIAssistantChatAdapter.updateMessage(assistantId, upd);
+                                    mAIAssistantChatAdapter.updateMessage(assistantId, finalMsg);
+                                    chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                                });
+                                break;
+                            }
+
+                            JSONObject toolCall = r.functionCall;
+
+                            JSONObject modelMsg = new JSONObject();
+                            modelMsg.put("role", "model");
+                            JSONArray modelParts = new JSONArray();
+                            modelParts.put(GeminiApi.buildModelFunctionCallPart(toolCall));
+                            modelMsg.put("parts", modelParts);
+                            contents.put(modelMsg);
+
+                            AIAssistantMessage toolStatus = AIAssistantMessage.assistant(
+                                assistantId,
+                                System.currentTimeMillis(),
+                                "Running tool: " + toolCall.optString("name", "tool") + "…",
+                                AIAssistantMessage.Status.STREAMING,
+                                AIAssistantMessage.ModelSource.GEMINI,
+                                m
+                            );
+                            runOnUiThread(() -> {
+                                mAIAssistantChatAdapter.updateMessage(assistantId, toolStatus);
+                                chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
+                            });
+
+                            AIAgentTools.ToolResult tr = AIAgentTools.dispatch(this, AI_PREFS, toolCall);
+
+                            JSONObject toolRespMsg = new JSONObject();
+                            toolRespMsg.put("role", "user");
+                            JSONArray toolRespParts = new JSONArray();
+                            toolRespParts.put(GeminiApi.buildUserFunctionResponsePart(tr.name, tr.response));
+                            toolRespMsg.put("parts", toolRespParts);
+                            contents.put(toolRespMsg);
+
+                            if (loop == maxToolLoops - 1) {
+                                AIAssistantMessage finalMsg = AIAssistantMessage.assistant(
+                                    assistantId,
+                                    System.currentTimeMillis(),
+                                    "Stopped after too many tool calls. Try a smaller request.",
+                                    AIAssistantMessage.Status.FINAL,
+                                    AIAssistantMessage.ModelSource.GEMINI,
+                                    m
+                                );
+                                runOnUiThread(() -> {
+                                    mAIAssistantChatAdapter.updateMessage(assistantId, finalMsg);
                                     chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
                                 });
                             }
-                        );
-
-                        String finalText = r.text;
-                        if (r.functionCall != null) finalText = finalText + "\n\n[FunctionCall]\n" + r.functionCall.toString();
-
-                        AIAssistantMessage finalMsg = AIAssistantMessage.assistant(
-                            assistantId,
-                            System.currentTimeMillis(),
-                            finalText,
-                            AIAssistantMessage.Status.FINAL,
-                            AIAssistantMessage.ModelSource.GEMINI,
-                            m == null ? "gemini-3-flash-preview" : m
-                        );
-
-                        runOnUiThread(() -> {
-                            mAIAssistantChatAdapter.updateMessage(assistantId, finalMsg);
-                            chat.post(() -> chat.scrollToPosition(mAIAssistantChatAdapter.getItemCount() - 1));
-                        });
+                        }
 
                     } else {
                         String path = p.getString(P_LOCAL_MODEL_PATH, "");
