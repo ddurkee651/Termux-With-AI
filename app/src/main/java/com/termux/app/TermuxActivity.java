@@ -139,6 +139,32 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private static final String LOG_TAG = "TermuxActivity";
 
+    public static Intent newInstance(Context context) {
+        Intent intent = new Intent(context, TermuxActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return intent;
+    }
+
+    public static void startTermuxActivity(Context context) {
+        if (context == null) return;
+
+        try {
+            context.startActivity(newInstance(context));
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to start TermuxActivity", e);
+        }
+    }
+
+    public static void updateTermuxActivityStyling(Context context, boolean recreateActivity) {
+        if (context == null) return;
+
+        Intent intent = new Intent(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
+        intent.setPackage(context.getPackageName());
+        intent.putExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, recreateActivity);
+        context.sendBroadcast(intent);
+    }
+
+
     private static final String AI_PREFS = "ai_assistant_prefs";
     private static final String P_MODEL_SOURCE = "model_source";
     private static final String P_LOCAL_MODEL_PATH = "local_model_path";
@@ -875,11 +901,14 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         return;
                     case TERMUX_ACTIVITY.ACTION_RELOAD_STYLE:
                         Logger.logDebug(LOG_TAG, "Received intent to reload styling");
+
+                        if (intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, false))
+                            recreate();
+                        else
+                            reloadActivityStyling();
+
                         reloadActivityStyling();
-                        return;
-                    case TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS:
-                        Logger.logDebug(LOG_TAG, "Received intent to request storage permissions");
-                        requestStoragePermission(false);
+
                         return;
                     default:
                 }
