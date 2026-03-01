@@ -139,6 +139,30 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     private static final String LOG_TAG = "TermuxActivity";
 
+    public static Intent newInstance(Context context) {
+        Intent intent = new Intent(context, TermuxActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return intent;
+    }
+
+    public static void startTermuxActivity(Context context) {
+        if (context == null) return;
+
+        try {
+            context.startActivity(newInstance(context));
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to start TermuxActivity", e);
+        }
+    }
+
+    public static void updateTermuxActivityStyling(Context context, boolean recreateActivity) {
+        Intent intent = new Intent(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
+        intent.setPackage(TermuxConstants.TERMUX_PACKAGE_NAME);
+        intent.putExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, recreateActivity);
+        context.sendBroadcast(intent);
+    }
+
+
     private static final String AI_PREFS = "ai_assistant_prefs";
     private static final String P_MODEL_SOURCE = "model_source";
     private static final String P_LOCAL_MODEL_PATH = "local_model_path";
@@ -763,10 +787,131 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         return mTerminalToolbarDefaultHeight;
     }
 
+    public void toggleTerminalToolbar() {
+        ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
+        if (terminalToolbarViewPager == null) return;
+
+        if (terminalToolbarViewPager.getVisibility() == View.VISIBLE) {
+            terminalToolbarViewPager.setVisibility(View.GONE);
+            mPreferences.setShowTerminalToolbar(false);
+        } else {
+            terminalToolbarViewPager.setVisibility(View.VISIBLE);
+            mPreferences.setShowTerminalToolbar(true);
+        }
+    }
+
+    public boolean isTerminalViewSelected() {
+        ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
+        return terminalToolbarViewPager == null || terminalToolbarViewPager.getCurrentItem() == 0;
+    }
+
     @Nullable
     public TerminalSession getCurrentSession() {
         if (mTerminalView != null) return mTerminalView.getCurrentSession();
         return null;
+    }
+
+    public TermuxService getTermuxService() {
+        return mTermuxService;
+    }
+
+    public TerminalView getTerminalView() {
+        return mTerminalView;
+    }
+
+    public boolean isVisible() {
+        return mIsVisible;
+    }
+
+    public TermuxAppSharedProperties getProperties() {
+        return mProperties;
+    }
+
+    public TermuxAppSharedPreferences getPreferences() {
+        return mPreferences;
+    }
+
+    public TermuxTerminalViewClient getTermuxTerminalViewClient() {
+        return mTermuxTerminalViewClient;
+    }
+
+    public TermuxTerminalSessionActivityClient getTermuxTerminalSessionClient() {
+        return mTermuxTerminalSessionActivityClient;
+    }
+
+    public boolean isActivityRecreated() {
+        return mIsActivityRecreated;
+    }
+
+    public boolean isOnResumeAfterOnCreate() {
+        return mIsOnResumeAfterOnCreate;
+    }
+
+    public void termuxSessionListNotifyUpdated() {
+        if (mTermuxSessionListViewController != null) mTermuxSessionListViewController.notifyDataSetChanged();
+    }
+
+    public void reloadActivityStyling() {
+        setMargins();
+        setTerminalToolbarHeight();
+
+        if (mTermuxTerminalViewClient != null)
+            mTermuxTerminalViewClient.onReloadActivityStyling();
+
+        if (mTermuxTerminalSessionActivityClient != null)
+            mTermuxTerminalSessionActivityClient.onReloadActivityStyling();
+    }
+
+    private void registerTermuxActivityBroadcastReceiver() {
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(TERMUX_ACTIVITY.ACTION_NOTIFY_APP_CRASH);
+        intentFilter.addAction(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
+        intentFilter.addAction(TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
+        registerReceiver(mTermuxActivityBroadcastReceiver, intentFilter);
+    }
+
+    private void unregisterTermuxActivityBroadcastReceiver() {
+        unregisterReceiver(mTermuxActivityBroadcastReceiver);
+    }
+
+    private void fixTermuxActivityBroadcastReceiverIntent(Intent intent) {
+        if (intent == null) return;
+
+        String extraReloadStyle = intent.getStringExtra(TERMUX_ACTIVITY.EXTRA_RELOAD_STYLE);
+        if ("storage".equals(extraReloadStyle)) {
+            intent.removeExtra(TERMUX_ACTIVITY.EXTRA_RELOAD_STYLE);
+            intent.setAction(TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
+        }
+    }
+
+    class TermuxActivityBroadcastReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+
+            if (mIsVisible) {
+                fixTermuxActivityBroadcastReceiverIntent(intent);
+
+                switch (intent.getAction()) {
+                    case TERMUX_ACTIVITY.ACTION_NOTIFY_APP_CRASH:
+                        Logger.logDebug(LOG_TAG, "Received intent to notify app crash");
+                        TermuxCrashUtils.notifyAppCrashFromCrashLogFile(context, LOG_TAG);
+                        return;
+                    case TERMUX_ACTIVITY.ACTION_RELOAD_STYLE:
+                        Logger.logDebug(LOG_TAG, "Received intent to reload styling");
+                        if (intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, false))
+                            recreate();
+                        else
+                            reloadActivityStyling();
+                        return;
+                    case TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS:
+                        Logger.logDebug(LOG_TAG, "Received intent to request storage permissions");
+                        requestStoragePermission(false);
+                        return;
+                    default:
+                }
+            }
+        }
     }
 
     private SharedPreferences aiPrefs() {
