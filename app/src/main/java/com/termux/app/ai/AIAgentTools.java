@@ -21,6 +21,9 @@ import java.io.FileOutputStream;
 
 public final class AIAgentTools {
 
+    private static final String TERMUX_HOME_ROOT = "/data/data/com.termux/files/home";
+    private static final String TERMUX_USR_ROOT = "/data/data/com.termux/files/usr";
+
     public static final class ToolResult {
         public final String name;
         public final JSONObject response;
@@ -143,7 +146,27 @@ public final class AIAgentTools {
 
     private static boolean isTermuxHomePath(String p) {
         if (p == null) return false;
-        return p.startsWith("/data/data/com.termux/files/home") || p.startsWith("/data/data/com.termux/files/usr");
+        try {
+            File canonicalFile = new File(p).getCanonicalFile();
+            String canonicalPath = canonicalFile.getPath();
+            return isAllowedTermuxPath(canonicalPath);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isAllowedTermuxPath(String canonicalPath) {
+        return isPathWithinRoot(canonicalPath, TERMUX_HOME_ROOT) || isPathWithinRoot(canonicalPath, TERMUX_USR_ROOT);
+    }
+
+    private static boolean isPathWithinRoot(String canonicalPath, String rootPath) {
+        return canonicalPath.equals(rootPath) || canonicalPath.startsWith(rootPath + File.separator);
+    }
+
+    private static File getCanonicalAllowedPath(String p) throws Exception {
+        File canonicalFile = new File(p).getCanonicalFile();
+        if (!isAllowedTermuxPath(canonicalFile.getPath())) return null;
+        return canonicalFile;
     }
 
     private static JSONObject listDir(Context ctx, String prefName, String pathOrUri, int maxItems) throws Exception {
@@ -155,7 +178,12 @@ public final class AIAgentTools {
         }
 
         if (isTermuxHomePath(pathOrUri)) {
-            File dir = new File(pathOrUri);
+            File dir = getCanonicalAllowedPath(pathOrUri);
+            if (dir == null) {
+                out.put("ok", false);
+                out.put("error", "Path is outside allowed Termux roots");
+                return out;
+            }
             if (!dir.exists() || !dir.isDirectory()) {
                 out.put("ok", false);
                 out.put("error", "Not a directory: " + pathOrUri);
@@ -227,7 +255,12 @@ public final class AIAgentTools {
         }
 
         if (isTermuxHomePath(pathOrUri)) {
-            File f = new File(pathOrUri);
+            File f = getCanonicalAllowedPath(pathOrUri);
+            if (f == null) {
+                out.put("ok", false);
+                out.put("error", "Path is outside allowed Termux roots");
+                return out;
+            }
             if (!f.exists() || !f.isFile()) {
                 out.put("ok", false);
                 out.put("error", "Not a file: " + pathOrUri);
@@ -268,7 +301,12 @@ public final class AIAgentTools {
         byte[] bytes = (content == null ? "" : content).getBytes(StandardCharsets.UTF_8);
 
         if (isTermuxHomePath(pathOrUri)) {
-            File f = new File(pathOrUri);
+            File f = getCanonicalAllowedPath(pathOrUri);
+            if (f == null) {
+                out.put("ok", false);
+                out.put("error", "Path is outside allowed Termux roots");
+                return out;
+            }
             File parent = f.getParentFile();
             if (parent != null && !parent.exists()) parent.mkdirs();
             FileOutputStream fos = new FileOutputStream(f, false);
