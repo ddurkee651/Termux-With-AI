@@ -25,6 +25,8 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Debug APK
+        env:
+          TERMUX_CI_AARCH64_ONLY: "1"
         run: ./gradlew :app:assembleDebug
 
       - name: Upload APK artifact
