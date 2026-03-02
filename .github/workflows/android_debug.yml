@@ -26,7 +26,7 @@ jobs:
         with:
           ndk-version: r26d
 
-      - name: Build llama.cpp shared libs (arm64-v8a)
+      - name: Build llama.cpp shared libs (arm64-v8a) into jniLibs
         run: |
           set -e
           rm -rf /tmp/llama.cpp
@@ -45,8 +45,11 @@ jobs:
             -DLLAMA_BUILD_TOOLS=OFF
           cmake --build build-android -j 4
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-          find build-android -type f -name "*.so*" -maxdepth 4 -print -exec cp -f {} "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" \;
-          ls -la "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a" || true
+          cp -f build-android/bin/libllama.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
+          cp -f build-android/bin/libggml.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
+          cp -f build-android/bin/libggml-base.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
+          cp -f build-android/bin/libggml-cpu.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
+          find "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a" -maxdepth 1 -type f -name "*.so" -print
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew

@@ -1252,7 +1252,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         if (path == null || path.trim().isEmpty()) throw new Exception("Local model not set");
 
                         StringBuilder live = new StringBuilder();
-                        bundledLlamaGenerateStreamingBytes(path.trim(), prompt, delta -> {
+                        llamaJniGenerateStreaming(path.trim(), prompt, delta -> {
                             live.append(delta);
                             AIAssistantMessage upd = AIAssistantMessage.assistant(
                                 assistantId,
@@ -1300,7 +1300,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         });
     }
 
-    private void bundledLlamaGenerateStreamingBytes(String modelPath, String prompt, DeltaCallback onDelta) throws Exception {
+    private void llamaJniGenerateStreaming(String modelPath, String prompt, DeltaCallback onDelta) throws Exception {
         ensureBundledLlamaReady();
 
         File runDir = new File(getFilesDir(), LLAMA_ASSET_DIR);
