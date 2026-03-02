@@ -3,7 +3,8 @@ name: Android Debug APK
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "master"]
+    branches:
+      - codex/review-github-actions-apk-build-process-p3ckz1
   pull_request:
 
 jobs:
