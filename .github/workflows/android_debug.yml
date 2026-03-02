@@ -26,43 +26,57 @@ jobs:
         with:
           ndk-version: r26d
 
-      - name: Build llama.cpp shared libs (arm64-v8a) into jniLibs
+      - name: Cross-compile llama.cpp using Android NDK
         run: |
           set -e
           rm -rf /tmp/llama.cpp
           git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
           cd /tmp/llama.cpp
-          cmake -S . -B build-android \
-            -DCMAKE_BUILD_TYPE=Release \
+          cmake \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-24 \
-            -DANDROID_STL=c++_shared \
-            -DBUILD_SHARED_LIBS=ON \
+            -DANDROID_PLATFORM=android-28 \
+            -DCMAKE_C_FLAGS="-march=armv8.7a" \
+            -DCMAKE_CXX_FLAGS="-march=armv8.7a" \
+            -DGGML_OPENMP=OFF \
+            -DGGML_LLAMAFILE=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
             -DLLAMA_CURL=OFF \
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
-            -DLLAMA_BUILD_TOOLS=OFF
-          cmake --build build-android -j 4
-          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
-          cp -f build-android/bin/libllama.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
-          cp -f build-android/bin/libggml.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
-          cp -f build-android/bin/libggml-base.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
-          cp -f build-android/bin/libggml-cpu.so "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/" 2>/dev/null || true
-          find "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a" -maxdepth 1 -type f -name "*.so" -print
+            -DLLAMA_BUILD_EXAMPLES=ON \
+            -DLLAMA_BUILD_TOOLS=OFF \
+            -B build-android
+          cmake --build build-android --config Release -j 4
+          cmake --install build-android --prefix "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a" --config Release
+          find "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a" -type f -name "*" | sort
 
-      - name: Copy llama.cpp headers into app/src/main/cpp
+      - name: Copy additional required libraries
         run: |
-          set -e
-          rm -rf /tmp/llama.cpp
-          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
-          mkdir -p "$GITHUB_WORKSPACE/app/src/main/cpp/llama/include"
-          mkdir -p "$GITHUB_WORKSPACE/app/src/main/cpp/llama/ggml/include"
-          cp -f /tmp/llama.cpp/include/*.h "$GITHUB_WORKSPACE/app/src/main/cpp/llama/include/"
-          cp -f /tmp/llama.cpp/ggml/include/*.h "$GITHUB_WORKSPACE/app/src/main/cpp/llama/ggml/include/"
-          ls -la "$GITHUB_WORKSPACE/app/src/main/cpp/llama/include" | head
-          ls -la "$GITHUB_WORKSPACE/app/src/main/cpp/llama/ggml/include" | head
+          find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android" -name "libc++_shared.so" -exec cp {} "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a/lib/" \;
+          ls -la "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a/lib/" 2>/dev/null || echo "No lib directory"
+
+      - name: Create asset manifest for debugging
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a"
+          find "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a" -type f -name "*" | while read f; do
+            echo "Asset: $f ($(du -h "$f" | cut -f1))"
+          done
+
+      - name: Disable JNI build in Android.mk
+        run: |
+          if [ -f app/src/main/cpp/Android.mk ]; then
+            sed -i '/LOCAL_MODULE := ai-llama-jni/,+10 s/^/#/' app/src/main/cpp/Android.mk || true
+            cat app/src/main/cpp/Android.mk
+          else
+            echo "Android.mk not found, skipping"
+          fi
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
+          cache-read-only: false
 
       - name: Make Gradle executable
         run: chmod +x ./gradlew
@@ -70,10 +84,26 @@ jobs:
       - name: Build Debug APK
         env:
           TERMUX_CI_AARCH64_ONLY: "1"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true"
         run: |
-          # Set additional compiler flags for JNI module
+          mkdir -p app/src/main/cpp
           echo "APP_STL := c++_shared" > app/src/main/cpp/Application.mk
-          ./gradlew :app:assembleDebug
+          echo "APP_CPPFLAGS := -frtti -fexceptions" >> app/src/main/cpp/Application.mk
+          
+          # Fix deprecated Gradle features by setting compatible versions
+          cat > gradle.properties << EOF
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          org.gradle.daemon=false
+          android.nonTransitiveRClass=false
+          android.defaults.buildfeatures.buildconfig=true
+          android.nonFinalResIds=false
+          EOF
+          
+          ./gradlew :app:assembleDebug --warning-mode all --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
