@@ -50,7 +50,6 @@ jobs:
           cmake --build build-android --config Release -j 4
 
           mkdir -p "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a"
-          cp build-android/bin/llama-cli "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a/"
           cp build-android/bin/*.so "$GITHUB_WORKSPACE/app/src/main/assets/llama/arm64-v8a/" || true
 
       - name: Copy libc++_shared.so
