@@ -26,21 +26,17 @@ Java_com_termux_app_ai_LlamaBridge_nativeInit(JNIEnv* env, jclass, jstring model
     llama_backend_init();
 
     llama_model_params mparams = llama_model_default_params();
-    llama_model* model = llama_load_model_from_file(path.c_str(), mparams);
+    llama_model* model = llama_model_load_from_file(path.c_str(), mparams);
     if (!model) return 0;
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx = (int)nCtx;
 
-    llama_context* ctx = llama_new_context_with_model(model, cparams);
+    llama_context* ctx = llama_init_from_model(model, cparams);
     if (!ctx) {
-        llama_free_model(model);
+        llama_model_free(model);
         return 0;
     }
-
-    uintptr_t packed = ((uintptr_t)model);
-    packed ^= ((uintptr_t)ctx << 1);
-    packed |= 1;
 
     struct Holder { llama_model* m; llama_context* c; };
     Holder* h = new Holder();
@@ -55,7 +51,7 @@ Java_com_termux_app_ai_LlamaBridge_nativeFree(JNIEnv*, jclass, jlong handle) {
     struct Holder { llama_model* m; llama_context* c; };
     Holder* h = (Holder*)(uintptr_t)handle;
     if (h->c) llama_free(h->c);
-    if (h->m) llama_free_model(h->m);
+    if (h->m) llama_model_free(h->m);
     delete h;
 }
 
@@ -100,7 +96,7 @@ Java_com_termux_app_ai_LlamaBridge_nativeComplete(JNIEnv* env, jclass, jlong han
     int n_cur = (int)tokens.size();
     for (int i = 0; i < (int)nPredict; i++) {
         llama_token t = llama_sampler_sample(sampler, h->c, -1);
-        if (t == llama_token_eos(vocab)) break;
+        if (t == llama_vocab_eos(vocab)) break;
 
         llama_batch batch2 = llama_batch_init(1, 0, 1);
         batch2.token[0] = t;
