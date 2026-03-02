@@ -2,16 +2,29 @@
 <resources xmlns:android="http://schemas.android.com/apk/res/android">
 
     <style name="TermuxAlertDialogStyle" parent="@android:style/Theme.Material.Light.Dialog.Alert">
-        <!-- Seen in buttons on alert dialog: -->
-        <item name="android:colorAccent">#212121</item>
+        <item name="android:colorAccent">@color/vibrant_cyan</item>
     </style>
 
-    <style name="TermuxActivity.Drawer.ButtonBarStyle.Light" parent="@style/Widget.MaterialComponents.Button.TextButton">
-        <item name="android:textColor">@color/black</item>
+    <style name="TermuxActivity.Drawer.ButtonBarStyle.Vibrant" parent="@style/Widget.MaterialComponents.Button.TextButton">
+        <item name="android:textColor">@color/vibrant_cyan</item>
     </style>
 
-    <style name="TermuxActivity.Drawer.ButtonBarStyle.Dark" parent="@style/Widget.MaterialComponents.Button.TextButton">
-        <item name="android:textColor">@color/white</item>
+    <style name="GlowingText" parent="android:Widget.TextView">
+        <item name="android:textColor">@color/vibrant_cyan</item>
+        <item name="android:shadowColor">@color/neon_purple</item>
+        <item name="android:shadowRadius">15</item>
+        <item name="android:shadowDx">0</item>
+        <item name="android:shadowDy">6</item>
+    </style>
+
+    <style name="GlowingBorderElement">
+        <item name="android:padding">12dp</item>
+        <item name="android:background">@drawable/glowing_border_shape</item>
+    </style>
+
+    <style name="VibrantFilledButton" parent="@style/Widget.MaterialComponents.Button">
+        <item name="android:backgroundTint">@color/neon_blue</item>
+        <item name="android:textColor">@color/deep_dark_background</item>
     </style>
 
 </resources>
