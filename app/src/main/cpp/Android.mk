@@ -31,6 +31,8 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := ai-llama-jni
 LOCAL_SRC_FILES := ai_llama_jni.cpp
 LOCAL_CPPFLAGS += -std=c++17
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/llama/include
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/llama/ggml/include
 LOCAL_LDLIBS += -llog -landroid
 LOCAL_SHARED_LIBRARIES := llama ggml ggml-base ggml-cpu
 include $(BUILD_SHARED_LIBRARY)
