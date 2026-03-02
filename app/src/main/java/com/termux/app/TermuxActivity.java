@@ -964,7 +964,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (!dir.exists()) dir.mkdirs();
 
         AssetManager am = getAssets();
-        for (String name : LLAMA_ASSET_FILES) {
+        String[] files = am.list(LLAMA_ASSET_DIR);
+
+        if (files == null || files.length == 0)
+            throw new Exception("No bundled llama assets found");
+
+        for (String name : files) {
             String assetPath = LLAMA_ASSET_DIR + "/" + name;
             File out = new File(dir, name);
 
@@ -973,9 +978,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
             InputStream in = am.open(assetPath, AssetManager.ACCESS_STREAMING);
             FileOutputStream fos = new FileOutputStream(out);
+
             byte[] buf = new byte[1024 * 1024];
             int r;
-            while ((r = in.read(buf)) != -1) fos.write(buf, 0, r);
+            while ((r = in.read(buf)) != -1)
+                fos.write(buf, 0, r);
+
             fos.flush();
             fos.close();
             in.close();
@@ -986,7 +994,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }
 
         File cli = new File(dir, "llama-cli");
-        if (!cli.exists()) throw new Exception("Bundled llama-cli missing");
+        if (!cli.exists())
+            throw new Exception("Bundled llama-cli missing");
     }
 
     private void downloadHf(String repo, String filename, String token, File outFile) throws Exception {
